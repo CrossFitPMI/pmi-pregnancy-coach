@@ -13,7 +13,7 @@
 :root{--bg:#000;--panel:#111;--panel2:#1a1a1a;--line:#2a2a2a;--text:#fff;--muted:#9a9a9a;
   --accent:#E8237A;--accent-soft:rgba(232,35,122,.14);--green:#2fbf71;--amber:#f5a623;--red:#e5372e;--radius:14px}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html{scroll-behavior:smooth;scroll-padding-top:70px}
+html{scroll-padding-top:70px}
 html,body{margin:0;background:var(--bg);color:var(--text)}
 body{font-family:Inter,system-ui,-apple-system,sans-serif;font-size:16px;line-height:1.5;padding-bottom:calc(40px + env(safe-area-inset-bottom))}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
@@ -212,16 +212,46 @@ footer small{display:block;color:var(--muted);margin-top:8px;font-size:12px;lett
     });
     document.getElementById('mv-empty').style.display=n?'none':'block';
   });}
-  // contents chips: highlight current section
+  // contents chips: tap to jump, highlight current section while scrolling
+  var nav=document.querySelector('nav.toc'), strip=document.querySelector('nav.toc .chips');
   var chips=[].slice.call(document.querySelectorAll('nav.toc .chip'));
   var secs=chips.map(function(c){return document.getElementById(c.getAttribute('href').slice(1));});
-  function onScroll(){
-    var y=window.scrollY+110, cur=0;
-    secs.forEach(function(s,i){ if(s&&s.offsetTop<=y) cur=i; });
-    chips.forEach(function(c,i){ var on=i===cur; if(on!==c.classList.contains('on')){ c.classList.toggle('on',on); if(on) c.scrollIntoView({block:'nearest',inline:'center'}); } });
-    var tt=document.getElementById('totop'); if(tt) tt.style.display=window.scrollY>900?'flex':'none';
+  var lockUntil=0, current=-1;
+  function navH(){ return nav?nav.offsetHeight:0; }
+  function setActive(i){
+    if(i===current) return; current=i;
+    chips.forEach(function(c,j){ c.classList.toggle('on',j===i); });
+    var c=chips[i]; if(!c||!strip) return;
+    /* Scroll ONLY the chip strip sideways. (scrollIntoView also moved the whole
+       page on iPhone, which is what made scrolling jump back up.) */
+    var left=c.offsetLeft-(strip.clientWidth-c.offsetWidth)/2;
+    strip.scrollTo({left:Math.max(0,left),behavior:'smooth'});
   }
-  window.addEventListener('scroll',onScroll,{passive:true}); onScroll();
+  function jumpTo(el){
+    var y=el.getBoundingClientRect().top+window.pageYOffset-navH()-6;
+    lockUntil=Date.now()+900;
+    window.scrollTo({top:Math.max(0,y),behavior:'smooth'});
+  }
+  chips.forEach(function(c,i){ c.addEventListener('click',function(ev){
+    var t=secs[i]; if(!t) return; ev.preventDefault(); setActive(i); jumpTo(t);
+  });});
+  document.querySelectorAll('a[href^="#"]:not(.chip)').forEach(function(a){
+    var id=a.getAttribute('href').slice(1); if(!id) return;
+    a.addEventListener('click',function(ev){ var t=document.getElementById(id); if(!t) return; ev.preventDefault(); jumpTo(t); });
+  });
+  var tt=document.getElementById('totop');
+  if(tt) tt.addEventListener('click',function(ev){ ev.preventDefault(); lockUntil=Date.now()+900; window.scrollTo({top:0,behavior:'smooth'}); });
+  var ticking=false;
+  function onScroll(){
+    if(tt) tt.style.display=window.pageYOffset>900?'flex':'none';
+    if(Date.now()<lockUntil) return;
+    var y=window.pageYOffset+navH()+40, cur=0;
+    secs.forEach(function(s,i){ if(s&&s.offsetTop<=y) cur=i; });
+    setActive(cur);
+  }
+  window.addEventListener('scroll',function(){ if(!ticking){ ticking=true; requestAnimationFrame(function(){ ticking=false; onScroll(); }); } },{passive:true});
+  window.addEventListener('scrollend',function(){ lockUntil=0; onScroll(); });
+  onScroll();
   // tappable checklist (coach) — remembered for today on this device
   var key='pmi_preg_ck_'+new Date().toISOString().slice(0,10), state={};
   try{ state=JSON.parse(localStorage.getItem(key)||'{}'); }catch(e){}
